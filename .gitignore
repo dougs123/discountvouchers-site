@@ -1,0 +1,14 @@
+node_modules/
+dist/
+build/
+.wrangler/
+*.db
+*.sqlite
+.env.local
+.env.*.local
+.DS_Store
+.idea/
+.vscode/
+*.log
+data/merchants.json
+data/seed-*.sql

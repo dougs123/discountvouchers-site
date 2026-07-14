@@ -1,0 +1,20 @@
+{
+  "name": "discountvouchers",
+  "version": "1.0.0",
+  "description": "UK merchant voucher aggregator",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "build": "node scripts/build-merchants.mjs && node scripts/scrape-vouchers.mjs",
+    "migrate": "wrangler d1 execute discountvouchers --file ./schema.sql",
+    "seed": "node scripts/seed-merchants.mjs"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0-rc.12",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "wrangler": "^3.47.0"
+  }
+}

@@ -1,0 +1,15 @@
+name = "discountvouchers"
+type = "service"
+main = "src/index.mjs"
+compatibility_date = "2024-12-16"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "discountvouchers"
+database_id = "discountvouchers"
+
+[env.production]
+route = "discountvouchers.workers.dev"
+
+[build]
+command = "npm install"
