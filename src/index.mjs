@@ -1,19 +1,52 @@
-import { Router } from 'itty-router';
-import { html } from 'hono/html';
 import { corsHeaders } from './cors.mjs';
 
-const router = Router();
+export default {
+  fetch: async (req, env) => {
+    const url = new URL(req.url);
 
-// CORS middleware
-router.all('*', (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+    // CORS preflight
+    if (req.method === 'OPTIONS') {
+      return new Response(null, { headers: corsHeaders });
+    }
+
+    try {
+      // API Routes
+      if (url.pathname === '/api/vouchers') {
+        return handleSearchVouchers(req, env, url);
+      }
+
+      if (url.pathname === '/api/merchants') {
+        return handleGetMerchants(req, env);
+      }
+
+      if (url.pathname.startsWith('/api/voucher/')) {
+        const code = url.pathname.replace('/api/voucher/', '');
+        return handleGetVoucher(req, env, code);
+      }
+
+      if (url.pathname === '/api/top-merchants') {
+        return handleTopMerchants(req, env);
+      }
+
+      // Frontend
+      if (url.pathname === '/') {
+        return new Response(frontendHTML, {
+          headers: { 'Content-Type': 'text/html' }
+        });
+      }
+
+      return new Response('Not Found', { status: 404 });
+    } catch (err) {
+      console.error(err);
+      return new Response(JSON.stringify({ error: err.message }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
   }
-});
+};
 
-// Search vouchers
-router.get('/api/vouchers', async (req, env) => {
-  const url = new URL(req.url);
+async function handleSearchVouchers(req, env, url) {
   const search = url.searchParams.get('q') || '';
   const category = url.searchParams.get('category') || '';
   const sort = url.searchParams.get('sort') || 'newest';
@@ -59,10 +92,9 @@ router.get('/api/vouchers', async (req, env) => {
   }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
   });
-});
+}
 
-// Get merchants
-router.get('/api/merchants', async (req, env) => {
+async function handleGetMerchants(req, env) {
   const { results } = await env.DB.prepare(
     `SELECT DISTINCT category FROM merchants WHERE is_active = 1 ORDER BY category`
   ).all();
@@ -72,11 +104,9 @@ router.get('/api/merchants', async (req, env) => {
   }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
   });
-});
+}
 
-// Get voucher by code
-router.get('/api/voucher/:code', async (req, env) => {
-  const { code } = req.params;
+async function handleGetVoucher(req, env, code) {
   const voucher = await env.DB.prepare(
     `SELECT v.*, m.name as merchant_name, m.domain FROM vouchers v
      JOIN merchants m ON v.merchant_id = m.id
@@ -93,10 +123,9 @@ router.get('/api/voucher/:code', async (req, env) => {
   return new Response(JSON.stringify(voucher), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
   });
-});
+}
 
-// Get top merchants by voucher count
-router.get('/api/top-merchants', async (req, env) => {
+async function handleTopMerchants(req, env) {
   const { results } = await env.DB.prepare(`
     SELECT m.id, m.name, m.domain, m.logo_url, m.category,
            COUNT(v.id) as voucher_count
@@ -111,26 +140,28 @@ router.get('/api/top-merchants', async (req, env) => {
   return new Response(JSON.stringify(results || []), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
   });
-});
-
-// Serve frontend
-router.get('/', () => new Response(frontendHTML, {
-  headers: { 'Content-Type': 'text/html' }
-}));
-
-// 404
-router.all('*', () => new Response('Not Found', { status: 404 }));
-
-export default {
-  fetch: (req, env) => router.handle(req, env)
-};
+}
 
 const frontendHTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="google-site-verification" content="discountvouchers-verification-code">
   <title>DiscountVouchers - UK Merchant Vouchers & Codes</title>
+
+  <!-- Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-DISCOUNTVOUCHERS"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-DISCOUNTVOUCHERS', {
+      'anonymize_ip': true,
+      'page_path': window.location.pathname
+    });
+  </script>
+
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -316,7 +347,7 @@ const frontendHTML = `<!DOCTYPE html>
         const html = '<h2>Top Merchants</h2><div class="merchants-grid">' +
           merchants.map(m => \`
             <div class="merchant-tile" onclick="filterByMerchant('\${m.name}')">
-              \${m.logo_url ? '<img src="' + m.logo_url + '" alt="' + m.name + '">' : '<div style="height:60px;display:flex;align-items:center">' + m.name.substr(0, 3).toUpperCase() + '</div>'}
+              \${m.logo_url ? '<img src="' + m.logo_url + '" alt="' + m.name + '">' : '<div style="height:60px;display:flex;align-items:center;justify-content:center;font-weight:bold">' + m.name.substr(0, 3).toUpperCase() + '</div>'}
               <div class="name">\${m.name}</div>
               <div class="count">\${m.voucher_count} vouchers</div>
             </div>
@@ -354,16 +385,26 @@ const frontendHTML = `<!DOCTYPE html>
 
     function copyCode(code) {
       navigator.clipboard.writeText(code);
+      gtag('event', 'voucher_code_copied', {
+        'code': code
+      });
       alert('Voucher code copied: ' + code);
     }
 
     function filterByMerchant(name) {
+      gtag('event', 'merchant_clicked', {
+        'merchant_name': name
+      });
       document.getElementById('search').value = name;
       search();
     }
 
     function search() {
       currentPage = 0;
+      gtag('event', 'search', {
+        'search_term': document.getElementById('search').value,
+        'category': document.getElementById('category').value
+      });
       loadVouchers();
     }
 
