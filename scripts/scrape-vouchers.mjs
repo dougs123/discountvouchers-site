@@ -115,13 +115,15 @@ async function scrapeAggregator(aggregator) {
 }
 
 // Generate sample vouchers for testing
+// Only real merchants - never the "Merchant N" placeholder rows
 async function generateSampleVouchers() {
   const sampleVouchers = [];
-  const discountTypes = ['10% off', '15% off', '20% off', '£5 off', '£10 off', 'Free Shipping', 'BOGO'];
+  const discountTypes = ['10% off', '15% off', '20% off', '25% off', '£5 off', '£10 off', '£20 off', 'Free Shipping', 'BOGO'];
 
-  for (let i = 0; i < Math.min(1000, merchants.length); i++) {
+  for (let i = 0; i < merchants.length; i++) {
     const merchant = merchants[i];
-    const numVouchers = Math.floor(Math.random() * 3) + 1;
+    if (merchant.name.startsWith('Merchant ')) continue;
+    const numVouchers = Math.floor(Math.random() * 5) + 3;
 
     for (let j = 0; j < numVouchers; j++) {
       const code = `${merchant.name.substr(0, 3).toUpperCase()}${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
