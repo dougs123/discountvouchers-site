@@ -16,6 +16,9 @@ jobs:
 
       - run: npm install
 
+      # data/ outputs are gitignored, so the dir doesn't exist in a fresh checkout
+      - run: mkdir -p data
+
       - run: npm run build
 
       - name: Deploy to Cloudflare Workers
