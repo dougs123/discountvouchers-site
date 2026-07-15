@@ -28,8 +28,35 @@ export default {
         return handleTopMerchants(req, env);
       }
 
+      // robots.txt
+      if (url.pathname === '/robots.txt') {
+        return new Response(`User-agent: *
+Allow: /
+Disallow: /api/*
+Disallow: /?utm_*
+Sitemap: https://discountvouchers.rewardspy.workers.dev/sitemap.xml`, {
+          headers: { 'Content-Type': 'text/plain' }
+        });
+      }
+
+      // sitemap.xml
+      if (url.pathname === '/sitemap.xml') {
+        const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://discountvouchers.rewardspy.workers.dev/</loc>
+    <lastmod>${new Date().toISOString().split('T')[0]}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>`;
+        return new Response(sitemap, {
+          headers: { 'Content-Type': 'application/xml' }
+        });
+      }
+
       // Frontend
-      if (url.pathname === '/') {
+      if (url.pathname === '/' || url.pathname === '') {
         return new Response(frontendHTML, {
           headers: { 'Content-Type': 'text/html' }
         });
@@ -148,7 +175,8 @@ const frontendHTML = `<!DOCTYPE html>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="google-site-verification" content="discountvouchers-verification-code">
-  <title>DiscountVouchers - UK Merchant Vouchers & Codes</title>
+  <title>DiscountVouchers - Save on UK Retail with Verified Voucher Codes</title>
+  <meta name="description" content="Find and share verified voucher codes from 5000+ UK merchants. Search by brand, filter by discount, copy codes instantly. Updated daily.">
 
   <!-- Google Analytics -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-DISCOUNTVOUCHERS"></script>
@@ -163,154 +191,530 @@ const frontendHTML = `<!DOCTYPE html>
   </script>
 
   <style>
+    :root {
+      --primary: #6366f1;
+      --primary-dark: #4f46e5;
+      --secondary: #ec4899;
+      --success: #10b981;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --bg-dark: #0f172a;
+      --bg-light: #f8fafc;
+      --border: #e2e8f0;
+      --text-dark: #1e293b;
+      --text-light: #64748b;
+    }
+
     * { margin: 0; padding: 0; box-sizing: border-box; }
+
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #f5f5f5;
-      color: #333;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+      background: var(--bg-light);
+      color: var(--text-dark);
+      line-height: 1.6;
     }
-    header {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      padding: 2rem 1rem;
-      text-align: center;
+
+    /* Navigation */
+    nav {
+      background: white;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
-    header h1 { font-size: 2.5rem; margin-bottom: 0.5rem; }
-    header p { font-size: 1.1rem; opacity: 0.9; }
 
-    .container { max-width: 1200px; margin: 0 auto; padding: 2rem 1rem; }
-
-    .search-bar {
+    nav .navbar {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 0 1.5rem;
       display: flex;
-      gap: 1rem;
+      justify-content: space-between;
+      align-items: center;
+      height: 70px;
+    }
+
+    .logo {
+      font-size: 1.5rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      cursor: pointer;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 2rem;
+      list-style: none;
+    }
+
+    .nav-links a {
+      text-decoration: none;
+      color: var(--text-light);
+      font-weight: 500;
+      transition: color 0.3s;
+    }
+
+    .nav-links a:hover {
+      color: var(--primary);
+    }
+
+    /* Hero Section */
+    .hero {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+      color: white;
+      padding: 4rem 1.5rem;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -50%;
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .hero-content {
+      max-width: 1400px;
+      margin: 0 auto;
+      position: relative;
+      z-index: 1;
+    }
+
+    .hero h1 {
+      font-size: 3.5rem;
+      font-weight: 800;
+      margin-bottom: 1rem;
+      letter-spacing: -0.02em;
+    }
+
+    .hero p {
+      font-size: 1.25rem;
+      opacity: 0.95;
       margin-bottom: 2rem;
+      max-width: 600px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .hero-stats {
+      display: flex;
+      justify-content: center;
+      gap: 4rem;
+      margin-top: 2rem;
       flex-wrap: wrap;
     }
+
+    .stat {
+      text-align: center;
+    }
+
+    .stat-number {
+      font-size: 2rem;
+      font-weight: 800;
+    }
+
+    .stat-label {
+      font-size: 0.9rem;
+      opacity: 0.85;
+    }
+
+    /* Search Section */
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 3rem 1.5rem;
+    }
+
+    .search-section {
+      margin-bottom: 3rem;
+    }
+
+    .search-bar {
+      display: grid;
+      grid-template-columns: 1fr 200px 150px auto;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
     .search-bar input,
     .search-bar select {
-      padding: 0.75rem;
-      border: 1px solid #ddd;
-      border-radius: 4px;
+      padding: 0.875rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
       font-size: 1rem;
-      flex: 1;
-      min-width: 200px;
+      background: white;
+      color: var(--text-dark);
+      transition: border-color 0.3s, box-shadow 0.3s;
     }
+
+    .search-bar input:focus,
+    .search-bar select:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+    }
+
     .search-bar button {
-      padding: 0.75rem 2rem;
-      background: #667eea;
+      padding: 0.875rem 2rem;
+      background: var(--primary);
       color: white;
       border: none;
-      border-radius: 4px;
+      border-radius: 8px;
       cursor: pointer;
-      font-weight: bold;
+      font-weight: 600;
+      transition: background 0.3s, transform 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
     }
-    .search-bar button:hover { background: #764ba2; }
+
+    .search-bar button:hover {
+      background: var(--primary-dark);
+      transform: translateY(-2px);
+    }
+
+    .search-bar button:active {
+      transform: translateY(0);
+    }
+
+    /* Top Merchants */
+    .merchants-section {
+      background: white;
+      border-radius: 12px;
+      padding: 2rem;
+      margin-bottom: 3rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      border: 1px solid var(--border);
+    }
+
+    .section-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 1.5rem;
+      color: var(--text-dark);
+    }
+
+    .merchants-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+      gap: 1rem;
+    }
+
+    .merchant-tile {
+      text-align: center;
+      padding: 1.25rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.3s;
+      background: white;
+    }
+
+    .merchant-tile:hover {
+      border-color: var(--primary);
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.15);
+      transform: translateY(-2px);
+    }
+
+    .merchant-tile img {
+      max-width: 100%;
+      max-height: 50px;
+      margin-bottom: 0.75rem;
+      object-fit: contain;
+    }
+
+    .merchant-tile .name {
+      font-weight: 600;
+      font-size: 0.9rem;
+      margin-bottom: 0.5rem;
+      color: var(--text-dark);
+    }
+
+    .merchant-tile .count {
+      color: var(--primary);
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
+    /* Vouchers Grid */
+    .vouchers-section {
+      margin-bottom: 2rem;
+    }
+
+    .results-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+      padding: 0 0.5rem;
+    }
+
+    .result-count {
+      color: var(--text-light);
+      font-size: 0.95rem;
+    }
 
     .vouchers-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
       gap: 1.5rem;
-      margin-bottom: 2rem;
     }
 
     .voucher-card {
       background: white;
-      border-radius: 8px;
+      border-radius: 12px;
       padding: 1.5rem;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-      border-left: 4px solid #667eea;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      border: 1px solid var(--border);
+      transition: all 0.3s;
+      display: flex;
+      flex-direction: column;
     }
-    .voucher-card h3 {
-      color: #667eea;
-      margin-bottom: 0.5rem;
+
+    .voucher-card:hover {
+      box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+      transform: translateY(-4px);
+      border-color: var(--primary);
+    }
+
+    .voucher-badge {
+      display: inline-block;
+      background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 20px;
+      font-weight: 700;
       font-size: 1.1rem;
+      margin-bottom: 0.75rem;
+      align-self: flex-start;
     }
-    .voucher-card .merchant { color: #666; font-size: 0.9rem; margin-bottom: 0.5rem; }
-    .voucher-card .description { margin-bottom: 1rem; }
+
+    .voucher-card .merchant {
+      color: var(--text-light);
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 0.75rem;
+    }
+
+    .voucher-card .description {
+      color: var(--text-dark);
+      font-size: 0.95rem;
+      margin-bottom: 1rem;
+      flex-grow: 1;
+    }
+
     .voucher-card .code {
-      background: #f0f0f0;
-      padding: 0.75rem;
-      border-radius: 4px;
-      font-family: monospace;
-      font-weight: bold;
+      background: linear-gradient(135deg, var(--bg-light) 0%, #f1f5f9 100%);
+      padding: 1rem;
+      border-radius: 8px;
+      border: 2px dashed var(--border);
+      font-family: 'Courier New', monospace;
+      font-weight: 700;
       margin-bottom: 1rem;
       cursor: pointer;
       text-align: center;
-      transition: background 0.2s;
+      user-select: all;
+      transition: all 0.3s;
+      font-size: 1.1rem;
+      letter-spacing: 1px;
     }
-    .voucher-card .code:hover { background: #e0e0e0; }
-    .voucher-card .expiry { font-size: 0.85rem; color: #999; }
-    .voucher-card .expiry.soon { color: #ff6b6b; }
 
-    .top-merchants {
-      background: white;
-      border-radius: 8px;
-      padding: 2rem;
-      margin-bottom: 2rem;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    .voucher-card .code:hover {
+      background: linear-gradient(135deg, #e0e7ff 0%, #f3e8ff 100%);
+      border-color: var(--primary);
+      transform: scale(1.02);
     }
-    .top-merchants h2 { margin-bottom: 1.5rem; color: #333; }
-    .merchants-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-      gap: 1rem;
+
+    .voucher-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.8rem;
     }
-    .merchant-tile {
+
+    .voucher-card .expiry {
+      color: var(--text-light);
+    }
+
+    .voucher-card .expiry.soon {
+      color: var(--danger);
+      font-weight: 600;
+    }
+
+    .copy-hint {
+      color: var(--primary);
+      font-size: 0.75rem;
       text-align: center;
+      margin-top: 0.5rem;
+      opacity: 0.7;
+    }
+
+    /* Status Messages */
+    .loading {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: var(--text-light);
+    }
+
+    .loading::after {
+      content: '';
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      margin-left: 0.5rem;
+      border: 3px solid var(--border);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .error {
+      color: var(--danger);
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.2);
       padding: 1rem;
-      border: 1px solid #eee;
-      border-radius: 4px;
-      cursor: pointer;
-      transition: border-color 0.2s;
+      border-radius: 8px;
+      margin: 1rem 0;
     }
-    .merchant-tile:hover { border-color: #667eea; }
-    .merchant-tile img {
-      max-width: 100%;
-      max-height: 60px;
-      margin-bottom: 0.5rem;
+
+    .empty {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: var(--text-light);
     }
-    .merchant-tile .name { font-weight: bold; font-size: 0.9rem; }
-    .merchant-tile .count { color: #667eea; font-size: 0.8rem; }
 
-    .loading { text-align: center; padding: 2rem; }
-    .error { color: #ff6b6b; background: #ffe0e0; padding: 1rem; border-radius: 4px; }
-    .empty { text-align: center; padding: 2rem; color: #999; }
-
+    /* Footer */
     footer {
-      background: #333;
-      color: #999;
-      padding: 2rem;
+      background: var(--bg-dark);
+      color: #94a3b8;
+      padding: 3rem 1.5rem;
       text-align: center;
       font-size: 0.9rem;
+      margin-top: 4rem;
+      border-top: 1px solid rgba(255,255,255,0.1);
+    }
+
+    footer a {
+      color: #cbd5e1;
+      text-decoration: none;
+      transition: color 0.3s;
+    }
+
+    footer a:hover {
+      color: white;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .hero h1 { font-size: 2rem; }
+      .hero p { font-size: 1rem; }
+      .hero-stats { gap: 2rem; }
+      .stat-number { font-size: 1.5rem; }
+      .search-bar {
+        grid-template-columns: 1fr;
+      }
+      .nav-links { display: none; }
+      .vouchers-grid {
+        grid-template-columns: 1fr;
+      }
+      .hero-stats { flex-direction: column; gap: 1rem; }
     }
   </style>
 </head>
 <body>
-  <header>
-    <h1>DiscountVouchers</h1>
-    <p>Discover the latest voucher codes & deals from top UK merchants</p>
-  </header>
-
-  <div class="container">
-    <div class="search-bar">
-      <input type="text" id="search" placeholder="Search vouchers or merchants...">
-      <select id="category">
-        <option value="">All Categories</option>
-      </select>
-      <select id="sort">
-        <option value="newest">Newest First</option>
-        <option value="discount">Best Discounts</option>
-      </select>
-      <button onclick="search()">Search</button>
+  <!-- Navigation -->
+  <nav>
+    <div class="navbar">
+      <div class="logo" onclick="location.reload()">
+        <span>💰</span> DiscountVouchers
+      </div>
+      <ul class="nav-links">
+        <li><a href="#search">Search</a></li>
+        <li><a href="#merchants">Merchants</a></li>
+        <li><a href="#vouchers">Deals</a></li>
+      </ul>
     </div>
+  </nav>
 
-    <div class="top-merchants" id="topMerchants"></div>
-
-    <div id="vouchersContainer"></div>
+  <!-- Hero Section -->
+  <div class="hero">
+    <div class="hero-content">
+      <h1>Save on Every Purchase</h1>
+      <p>Discover verified voucher codes from 5,000+ UK retailers. Copy, use, save.</p>
+      <div class="hero-stats">
+        <div class="stat">
+          <div class="stat-number">5,000+</div>
+          <div class="stat-label">UK Merchants</div>
+        </div>
+        <div class="stat">
+          <div class="stat-number">2,000+</div>
+          <div class="stat-label">Active Vouchers</div>
+        </div>
+        <div class="stat">
+          <div class="stat-number">16</div>
+          <div class="stat-label">Categories</div>
+        </div>
+      </div>
+    </div>
   </div>
 
+  <!-- Main Content -->
+  <div class="container">
+    <!-- Search Section -->
+    <div class="search-section" id="search">
+      <h2 class="section-title">Find Your Next Deal</h2>
+      <div class="search-bar">
+        <input type="text" id="search-input" placeholder="Search ASOS, Currys, Argos...">
+        <select id="category">
+          <option value="">All Categories</option>
+        </select>
+        <select id="sort">
+          <option value="newest">Newest</option>
+          <option value="discount">Best Deals</option>
+        </select>
+        <button onclick="search()">🔍 Search</button>
+      </div>
+    </div>
+
+    <!-- Top Merchants -->
+    <div class="merchants-section" id="merchants">
+      <h2 class="section-title">Top Merchants</h2>
+      <div id="topMerchants" class="merchants-grid"></div>
+    </div>
+
+    <!-- Vouchers -->
+    <div class="vouchers-section" id="vouchers">
+      <div class="results-header">
+        <h2 class="section-title">Latest Deals</h2>
+        <span class="result-count" id="resultCount"></span>
+      </div>
+      <div id="vouchersContainer"></div>
+    </div>
+  </div>
+
+  <!-- Footer -->
   <footer>
-    <p>&copy; 2026 DiscountVouchers. Always check merchant websites for terms & conditions.</p>
+    <p><strong>DiscountVouchers</strong> — Save on 5,000+ UK retailers</p>
+    <p style="margin-top: 1rem; opacity: 0.7;">Always verify codes work before checkout. Terms apply per merchant. <a href="#">Terms</a> • <a href="#">Privacy</a></p>
   </footer>
 
   <script>
@@ -318,7 +722,7 @@ const frontendHTML = `<!DOCTYPE html>
     const pageSize = 20;
 
     async function loadVouchers() {
-      const search = document.getElementById('search').value;
+      const search = document.getElementById('search-input').value;
       const category = document.getElementById('category').value;
       const sort = document.getElementById('sort').value;
 
@@ -331,11 +735,20 @@ const frontendHTML = `<!DOCTYPE html>
       });
 
       try {
+        document.getElementById('vouchersContainer').innerHTML = '<div class="loading">Loading vouchers...</div>';
         const res = await fetch(\`/api/vouchers?\${params}\`);
         const data = await res.json();
+
+        const resultCount = document.getElementById('resultCount');
+        if (data.total > 0) {
+          resultCount.textContent = \`\${data.total} vouchers found\`;
+        } else {
+          resultCount.textContent = '0 vouchers';
+        }
+
         renderVouchers(data.vouchers);
       } catch (err) {
-        document.getElementById('vouchersContainer').innerHTML = '<div class="error">Failed to load vouchers</div>';
+        document.getElementById('vouchersContainer').innerHTML = '<div class="error">⚠️ Failed to load vouchers. Please try again.</div>';
       }
     }
 
@@ -344,14 +757,18 @@ const frontendHTML = `<!DOCTYPE html>
         const res = await fetch('/api/top-merchants');
         const merchants = await res.json();
 
-        const html = '<h2>Top Merchants</h2><div class="merchants-grid">' +
-          merchants.map(m => \`
-            <div class="merchant-tile" onclick="filterByMerchant('\${m.name}')">
-              \${m.logo_url ? '<img src="' + m.logo_url + '" alt="' + m.name + '">' : '<div style="height:60px;display:flex;align-items:center;justify-content:center;font-weight:bold">' + m.name.substr(0, 3).toUpperCase() + '</div>'}
-              <div class="name">\${m.name}</div>
-              <div class="count">\${m.voucher_count} vouchers</div>
-            </div>
-          \`).join('') + '</div>';
+        if (!merchants.length) {
+          document.getElementById('topMerchants').innerHTML = '<div class="empty">No merchants found</div>';
+          return;
+        }
+
+        const html = merchants.map(m => \`
+          <div class="merchant-tile" onclick="filterByMerchant('\${m.name}')">
+            \${m.logo_url ? '<img src="' + m.logo_url + '" alt="' + m.name + '">' : '<div style="height:50px;display:flex;align-items:center;justify-content:center;font-weight:bold;background:#f1f5f9;border-radius:6px">' + m.name.substr(0, 3).toUpperCase() + '</div>'}
+            <div class="name">\${m.name}</div>
+            <div class="count">\${m.voucher_count} codes</div>
+          </div>
+        \`).join('');
 
         document.getElementById('topMerchants').innerHTML = html;
       } catch (err) {
@@ -360,49 +777,64 @@ const frontendHTML = `<!DOCTYPE html>
     }
 
     function renderVouchers(vouchers) {
-      if (!vouchers.length) {
-        document.getElementById('vouchersContainer').innerHTML = '<div class="empty">No vouchers found</div>';
+      if (!vouchers || !vouchers.length) {
+        document.getElementById('vouchersContainer').innerHTML = '<div class="empty">😢 No vouchers match your search. Try a different term or browse by category.</div>';
         return;
       }
 
-      const html = '<div class="vouchers-grid">' +
-        vouchers.map(v => {
-          const expiry = v.expiry_date ? new Date(v.expiry_date) : null;
-          const isExpiringSoon = expiry && (expiry - new Date()) < 7 * 24 * 60 * 60 * 1000;
-          return \`
-            <div class="voucher-card">
-              <h3>\${v.discount_value || 'Special Offer'}</h3>
-              <div class="merchant">\${v.merchant_name}</div>
-              <div class="description">\${v.description}</div>
-              <div class="code" onclick="copyCode('\${v.code}')">\${v.code || 'No code needed'}</div>
-              \${v.expiry_date ? '<div class="expiry \${isExpiringSoon ? 'soon' : ''}">Expires: ' + new Date(v.expiry_date).toLocaleDateString() + '</div>' : '<div class="expiry">No expiry</div>'}
-            </div>
-          \`;
-        }).join('') + '</div>';
+      const html = vouchers.map(v => {
+        const expiry = v.expiry_date ? new Date(v.expiry_date) : null;
+        const isExpiringSoon = expiry && (expiry - new Date()) < 7 * 24 * 60 * 60 * 1000;
+        const daysLeft = expiry ? Math.ceil((expiry - new Date()) / (1000 * 60 * 60 * 24)) : null;
 
-      document.getElementById('vouchersContainer').innerHTML = html;
+        return \`
+          <div class="voucher-card">
+            <div class="voucher-badge">\${v.discount_value || 'Deal'}</div>
+            <div class="merchant">\${v.merchant_name}</div>
+            <div class="description">\${v.description}</div>
+            <div class="code" onclick="copyCode('\${v.code}', '\${v.merchant_name}')" title="Click to copy">\${v.code || 'No code needed'}</div>
+            <div class="copy-hint">Click code to copy</div>
+            <div class="voucher-meta">
+              <span class="expiry \${isExpiringSoon ? 'soon' : ''}">\${v.expiry_date ? (isExpiringSoon ? '⏰ ' : '✓ ') + new Date(v.expiry_date).toLocaleDateString() : '∞ No expiry'}</span>
+            </div>
+          </div>
+        \`;
+      }).join('');
+
+      document.getElementById('vouchersContainer').innerHTML = \`<div class="vouchers-grid">\${html}</div>\`;
     }
 
-    function copyCode(code) {
+    function copyCode(code, merchant) {
       navigator.clipboard.writeText(code);
       gtag('event', 'voucher_code_copied', {
-        'code': code
+        'code': code,
+        'merchant': merchant
       });
-      alert('Voucher code copied: ' + code);
+
+      // Show success feedback
+      const btn = event.target;
+      const originalText = btn.textContent;
+      btn.textContent = '✓ Copied!';
+      btn.style.background = 'var(--success)';
+      setTimeout(() => {
+        btn.textContent = originalText;
+        btn.style.background = '';
+      }, 2000);
     }
 
     function filterByMerchant(name) {
       gtag('event', 'merchant_clicked', {
         'merchant_name': name
       });
-      document.getElementById('search').value = name;
+      document.getElementById('search-input').value = name;
       search();
+      document.getElementById('search').scrollIntoView({ behavior: 'smooth' });
     }
 
     function search() {
       currentPage = 0;
       gtag('event', 'search', {
-        'search_term': document.getElementById('search').value,
+        'search_term': document.getElementById('search-input').value,
         'category': document.getElementById('category').value
       });
       loadVouchers();
@@ -413,7 +845,7 @@ const frontendHTML = `<!DOCTYPE html>
         const res = await fetch('/api/merchants');
         const data = await res.json();
         const select = document.getElementById('category');
-        data.categories.forEach(cat => {
+        data.categories.sort().forEach(cat => {
           const option = document.createElement('option');
           option.value = cat;
           option.textContent = cat.charAt(0).toUpperCase() + cat.slice(1);
@@ -423,6 +855,13 @@ const frontendHTML = `<!DOCTYPE html>
         console.error('Failed to load categories', err);
       }
     }
+
+    // Enter key to search
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('search-input').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') search();
+      });
+    });
 
     // Initial load
     loadCategories();
