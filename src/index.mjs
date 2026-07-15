@@ -722,33 +722,48 @@ const frontendHTML = `<!DOCTYPE html>
     const pageSize = 20;
 
     async function loadVouchers() {
-      const search = document.getElementById('search-input').value;
-      const category = document.getElementById('category').value;
-      const sort = document.getElementById('sort').value;
+      const searchInput = document.getElementById('search-input');
+      const categorySelect = document.getElementById('category');
+      const sortSelect = document.getElementById('sort');
+
+      const search = searchInput ? searchInput.value : '';
+      const category = categorySelect ? categorySelect.value : '';
+      const sort = sortSelect ? sortSelect.value : 'newest';
 
       const params = new URLSearchParams({
-        q: search,
-        category,
-        sort,
+        q: search || '',
+        category: category || '',
+        sort: sort || 'newest',
         limit: pageSize,
         offset: currentPage * pageSize
       });
 
       try {
-        document.getElementById('vouchersContainer').innerHTML = '<div class="loading">Loading vouchers...</div>';
-        const res = await fetch(\`/api/vouchers?\${params}\`);
+        const container = document.getElementById('vouchersContainer');
+        if (container) {
+          container.innerHTML = '<div class="loading">Loading vouchers...</div>';
+        }
+
+        const url = \`/api/vouchers?\${params.toString()}\`;
+        const res = await fetch(url);
         const data = await res.json();
 
         const resultCount = document.getElementById('resultCount');
-        if (data.total > 0) {
-          resultCount.textContent = \`\${data.total} vouchers found\`;
-        } else {
-          resultCount.textContent = '0 vouchers';
+        if (resultCount) {
+          if (data.total > 0) {
+            resultCount.textContent = \`\${data.total} vouchers found\`;
+          } else {
+            resultCount.textContent = '0 vouchers found';
+          }
         }
 
-        renderVouchers(data.vouchers);
+        renderVouchers(data.vouchers || []);
       } catch (err) {
-        document.getElementById('vouchersContainer').innerHTML = '<div class="error">⚠️ Failed to load vouchers. Please try again.</div>';
+        console.error('Error loading vouchers:', err);
+        const container = document.getElementById('vouchersContainer');
+        if (container) {
+          container.innerHTML = '<div class="error">⚠️ Failed to load vouchers. Please try again.</div>';
+        }
       }
     }
 
@@ -826,17 +841,27 @@ const frontendHTML = `<!DOCTYPE html>
       gtag('event', 'merchant_clicked', {
         'merchant_name': name
       });
+      // Clear category filter when searching by merchant
+      document.getElementById('category').value = '';
       document.getElementById('search-input').value = name;
       search();
-      document.getElementById('search').scrollIntoView({ behavior: 'smooth' });
+      setTimeout(() => {
+        document.getElementById('search').scrollIntoView({ behavior: 'smooth' });
+      }, 100);
     }
 
     function search() {
       currentPage = 0;
-      gtag('event', 'search', {
-        'search_term': document.getElementById('search-input').value,
-        'category': document.getElementById('category').value
-      });
+      const searchInput = document.getElementById('search-input');
+      const categorySelect = document.getElementById('category');
+
+      if (window.gtag) {
+        gtag('event', 'search', {
+          'search_term': searchInput ? searchInput.value : '',
+          'category': categorySelect ? categorySelect.value : ''
+        });
+      }
+
       loadVouchers();
     }
 
