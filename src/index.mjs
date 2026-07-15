@@ -80,36 +80,38 @@ async function handleSearchVouchers(req, env, url) {
   const limit = Math.min(parseInt(url.searchParams.get('limit')) || 20, 100);
   const offset = parseInt(url.searchParams.get('offset')) || 0;
 
-  let query = `
-    SELECT v.*, m.name as merchant_name, m.domain, m.logo_url
-    FROM vouchers v
-    JOIN merchants m ON v.merchant_id = m.id
+  let where = `
     WHERE v.is_active = 1 AND (v.expiry_date IS NULL OR v.expiry_date > DATE('now'))
   `;
 
-  const params = [];
+  const filterParams = [];
 
   if (search) {
-    query += ` AND (v.description LIKE ? OR m.name LIKE ?)`;
-    params.push(`%${search}%`, `%${search}%`);
+    where += ` AND (v.description LIKE ? OR m.name LIKE ?)`;
+    filterParams.push(`%${search}%`, `%${search}%`);
   }
 
   if (category) {
-    query += ` AND m.category = ?`;
-    params.push(category);
+    where += ` AND m.category = ?`;
+    filterParams.push(category);
   }
 
-  query += ` ORDER BY ${sort === 'discount' ? 'v.discount_value DESC' : 'v.scraped_at DESC'}`;
-  query += ` LIMIT ? OFFSET ?`;
-  params.push(limit, offset);
+  const query = `
+    SELECT v.*, m.name as merchant_name, m.domain, m.logo_url
+    FROM vouchers v
+    JOIN merchants m ON v.merchant_id = m.id
+    ${where}
+    ORDER BY ${sort === 'discount' ? 'v.discount_value DESC' : 'v.scraped_at DESC'}
+    LIMIT ? OFFSET ?
+  `;
 
-  const { results } = await env.DB.prepare(query).bind(...params).all();
+  const { results } = await env.DB.prepare(query).bind(...filterParams, limit, offset).all();
 
   const countResult = await env.DB.prepare(
     `SELECT COUNT(*) as total FROM vouchers v
      JOIN merchants m ON v.merchant_id = m.id
-     WHERE v.is_active = 1 AND (v.expiry_date IS NULL OR v.expiry_date > DATE('now'))`
-  ).first();
+     ${where}`
+  ).bind(...filterParams).first();
 
   return new Response(JSON.stringify({
     vouchers: results || [],
@@ -718,150 +720,177 @@ const frontendHTML = `<!DOCTYPE html>
   </footer>
 
   <script>
-    let currentPage = 0;
-    const pageSize = 20;
+    var currentPage = 0;
+    var pageSize = 20;
+
+    function el(tag, className, text) {
+      var node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined && text !== null) node.textContent = text;
+      return node;
+    }
+
+    function track(eventName, params) {
+      if (window.gtag) { gtag('event', eventName, params || {}); }
+    }
 
     async function loadVouchers() {
-      const searchInput = document.getElementById('search-input');
-      const categorySelect = document.getElementById('category');
-      const sortSelect = document.getElementById('sort');
+      var searchInput = document.getElementById('search-input');
+      var categorySelect = document.getElementById('category');
+      var sortSelect = document.getElementById('sort');
+      var container = document.getElementById('vouchersContainer');
 
-      const search = searchInput ? searchInput.value : '';
-      const category = categorySelect ? categorySelect.value : '';
-      const sort = sortSelect ? sortSelect.value : 'newest';
-
-      const params = new URLSearchParams({
-        q: search || '',
-        category: category || '',
-        sort: sort || 'newest',
+      var params = new URLSearchParams({
+        q: searchInput ? searchInput.value : '',
+        category: categorySelect ? categorySelect.value : '',
+        sort: sortSelect ? sortSelect.value : 'newest',
         limit: pageSize,
         offset: currentPage * pageSize
       });
 
       try {
-        const container = document.getElementById('vouchersContainer');
         if (container) {
-          container.innerHTML = '<div class="loading">Loading vouchers...</div>';
+          container.innerHTML = '';
+          container.appendChild(el('div', 'loading', 'Loading vouchers...'));
         }
 
-        const url = \`/api/vouchers?\${params.toString()}\`;
-        const res = await fetch(url);
-        const data = await res.json();
+        var res = await fetch('/api/vouchers?' + params.toString());
+        var data = await res.json();
 
-        const resultCount = document.getElementById('resultCount');
+        var resultCount = document.getElementById('resultCount');
         if (resultCount) {
-          if (data.total > 0) {
-            resultCount.textContent = \`\${data.total} vouchers found\`;
-          } else {
-            resultCount.textContent = '0 vouchers found';
-          }
+          resultCount.textContent = (data.total || 0) + ' vouchers found';
         }
 
         renderVouchers(data.vouchers || []);
       } catch (err) {
         console.error('Error loading vouchers:', err);
-        const container = document.getElementById('vouchersContainer');
         if (container) {
-          container.innerHTML = '<div class="error">⚠️ Failed to load vouchers. Please try again.</div>';
+          container.innerHTML = '';
+          container.appendChild(el('div', 'error', 'Failed to load vouchers. Please try again.'));
         }
       }
     }
 
     async function loadTopMerchants() {
+      var wrap = document.getElementById('topMerchants');
       try {
-        const res = await fetch('/api/top-merchants');
-        const merchants = await res.json();
+        var res = await fetch('/api/top-merchants');
+        var merchants = await res.json();
 
+        wrap.innerHTML = '';
         if (!merchants.length) {
-          document.getElementById('topMerchants').innerHTML = '<div class="empty">No merchants found</div>';
+          wrap.appendChild(el('div', 'empty', 'No merchants found'));
           return;
         }
 
-        const html = merchants.map(m => {
-          const escapedName = (m.name || '').replace(/'/g, "\\'");
-          const logo = m.logo_url ? '<img src="' + m.logo_url + '" alt="' + m.name + '">' : '<div style="height:50px;display:flex;align-items:center;justify-content:center;font-weight:bold;background:#f1f5f9;border-radius:6px">' + (m.name || '').substr(0, 3).toUpperCase() + '</div>';
-          return '<div class="merchant-tile" onclick="filterByMerchant(\'' + escapedName + '\')">' + logo + '<div class="name">' + m.name + '</div><div class="count">' + m.voucher_count + ' codes</div></div>';
-        }).join('');
-
-        document.getElementById('topMerchants').innerHTML = html;
+        merchants.forEach(function (m) {
+          var tile = el('div', 'merchant-tile');
+          if (m.logo_url) {
+            var img = document.createElement('img');
+            img.src = m.logo_url;
+            img.alt = m.name;
+            tile.appendChild(img);
+          } else {
+            var initials = el('div', null, (m.name || '').substr(0, 3).toUpperCase());
+            initials.style.cssText = 'height:50px;display:flex;align-items:center;justify-content:center;font-weight:bold;background:#f1f5f9;border-radius:6px';
+            tile.appendChild(initials);
+          }
+          tile.appendChild(el('div', 'name', m.name));
+          tile.appendChild(el('div', 'count', m.voucher_count + ' codes'));
+          tile.addEventListener('click', function () { filterByMerchant(m.name); });
+          wrap.appendChild(tile);
+        });
       } catch (err) {
         console.error('Failed to load merchants', err);
       }
     }
 
     function renderVouchers(vouchers) {
+      var container = document.getElementById('vouchersContainer');
+      container.innerHTML = '';
+
       if (!vouchers || !vouchers.length) {
-        document.getElementById('vouchersContainer').innerHTML = '<div class="empty">😢 No vouchers match your search. Try a different term or browse by category.</div>';
+        container.appendChild(el('div', 'empty', 'No vouchers match your search. Try a different term or browse by category.'));
         return;
       }
 
-      const html = vouchers.map(v => {
-        const expiry = v.expiry_date ? new Date(v.expiry_date) : null;
-        const isExpiringSoon = expiry && (expiry - new Date()) < 7 * 24 * 60 * 60 * 1000;
-        const code = (v.code || '').replace(/'/g, "\\'");
-        const merchant = (v.merchant_name || '').replace(/'/g, "\\'");
-        const expiryClass = isExpiringSoon ? 'soon' : '';
-        const expiryText = v.expiry_date ? (isExpiringSoon ? '⏰ ' : '✓ ') + new Date(v.expiry_date).toLocaleDateString() : '∞ No expiry';
+      var grid = el('div', 'vouchers-grid');
 
-        return '<div class="voucher-card"><div class="voucher-badge">' + (v.discount_value || 'Deal') + '</div><div class="merchant">' + v.merchant_name + '</div><div class="description">' + v.description + '</div><div class="code" onclick="copyCode(\'' + code + '\', \'' + merchant + '\')" title="Click to copy">' + (v.code || 'No code needed') + '</div><div class="copy-hint">Click code to copy</div><div class="voucher-meta"><span class="expiry ' + expiryClass + '">' + expiryText + '</span></div></div>';
-      }).join('');
+      vouchers.forEach(function (v) {
+        var expiry = v.expiry_date ? new Date(v.expiry_date) : null;
+        var isExpiringSoon = expiry && (expiry - new Date()) < 7 * 24 * 60 * 60 * 1000;
 
-      document.getElementById('vouchersContainer').innerHTML = '<div class="vouchers-grid">' + html + '</div>';
-    }
+        var card = el('div', 'voucher-card');
+        card.appendChild(el('div', 'voucher-badge', v.discount_value || 'Deal'));
+        card.appendChild(el('div', 'merchant', v.merchant_name));
+        card.appendChild(el('div', 'description', v.description));
 
-    function copyCode(code, merchant) {
-      navigator.clipboard.writeText(code);
-      gtag('event', 'voucher_code_copied', {
-        'code': code,
-        'merchant': merchant
+        var codeBox = el('div', 'code', v.code || 'No code needed');
+        codeBox.title = 'Click to copy';
+        codeBox.addEventListener('click', function () { copyCode(codeBox, v.code, v.merchant_name); });
+        card.appendChild(codeBox);
+
+        card.appendChild(el('div', 'copy-hint', 'Click code to copy'));
+
+        var meta = el('div', 'voucher-meta');
+        var expiryText = v.expiry_date
+          ? (isExpiringSoon ? 'Expires soon: ' : 'Expires: ') + new Date(v.expiry_date).toLocaleDateString()
+          : 'No expiry';
+        meta.appendChild(el('span', 'expiry' + (isExpiringSoon ? ' soon' : ''), expiryText));
+        card.appendChild(meta);
+
+        grid.appendChild(card);
       });
 
-      // Show success feedback
-      const btn = event.target;
-      const originalText = btn.textContent;
-      btn.textContent = '✓ Copied!';
-      btn.style.background = 'var(--success)';
-      setTimeout(() => {
-        btn.textContent = originalText;
-        btn.style.background = '';
-      }, 2000);
+      container.appendChild(grid);
+    }
+
+    function copyCode(box, code, merchant) {
+      if (!code) return;
+      navigator.clipboard.writeText(code);
+      track('voucher_code_copied', { code: code, merchant: merchant });
+
+      var original = box.textContent;
+      box.textContent = 'Copied!';
+      box.style.background = 'var(--success)';
+      box.style.color = 'white';
+      setTimeout(function () {
+        box.textContent = original;
+        box.style.background = '';
+        box.style.color = '';
+      }, 1500);
     }
 
     function filterByMerchant(name) {
-      gtag('event', 'merchant_clicked', {
-        'merchant_name': name
-      });
-      // Clear category filter when searching by merchant
-      document.getElementById('category').value = '';
-      document.getElementById('search-input').value = name;
+      track('merchant_clicked', { merchant_name: name });
+      var categorySelect = document.getElementById('category');
+      var searchInput = document.getElementById('search-input');
+      if (categorySelect) categorySelect.value = '';
+      if (searchInput) searchInput.value = name;
       search();
-      setTimeout(() => {
-        document.getElementById('search').scrollIntoView({ behavior: 'smooth' });
-      }, 100);
+      var section = document.getElementById('vouchers');
+      if (section) section.scrollIntoView({ behavior: 'smooth' });
     }
 
     function search() {
       currentPage = 0;
-      const searchInput = document.getElementById('search-input');
-      const categorySelect = document.getElementById('category');
-
-      if (window.gtag) {
-        gtag('event', 'search', {
-          'search_term': searchInput ? searchInput.value : '',
-          'category': categorySelect ? categorySelect.value : ''
-        });
-      }
-
+      var searchInput = document.getElementById('search-input');
+      var categorySelect = document.getElementById('category');
+      track('search', {
+        search_term: searchInput ? searchInput.value : '',
+        category: categorySelect ? categorySelect.value : ''
+      });
       loadVouchers();
     }
 
     async function loadCategories() {
       try {
-        const res = await fetch('/api/merchants');
-        const data = await res.json();
-        const select = document.getElementById('category');
-        data.categories.sort().forEach(cat => {
-          const option = document.createElement('option');
+        var res = await fetch('/api/merchants');
+        var data = await res.json();
+        var select = document.getElementById('category');
+        (data.categories || []).sort().forEach(function (cat) {
+          var option = document.createElement('option');
           option.value = cat;
           option.textContent = cat.charAt(0).toUpperCase() + cat.slice(1);
           select.appendChild(option);
@@ -871,14 +900,10 @@ const frontendHTML = `<!DOCTYPE html>
       }
     }
 
-    // Enter key to search
-    document.addEventListener('DOMContentLoaded', () => {
-      document.getElementById('search-input').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') search();
-      });
+    document.getElementById('search-input').addEventListener('keypress', function (e) {
+      if (e.key === 'Enter') search();
     });
 
-    // Initial load
     loadCategories();
     loadTopMerchants();
     loadVouchers();
