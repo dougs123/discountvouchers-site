@@ -777,13 +777,11 @@ const frontendHTML = `<!DOCTYPE html>
           return;
         }
 
-        const html = merchants.map(m => \`
-          <div class="merchant-tile" onclick="filterByMerchant('\${m.name}')">
-            \${m.logo_url ? '<img src="' + m.logo_url + '" alt="' + m.name + '">' : '<div style="height:50px;display:flex;align-items:center;justify-content:center;font-weight:bold;background:#f1f5f9;border-radius:6px">' + m.name.substr(0, 3).toUpperCase() + '</div>'}
-            <div class="name">\${m.name}</div>
-            <div class="count">\${m.voucher_count} codes</div>
-          </div>
-        \`).join('');
+        const html = merchants.map(m => {
+          const escapedName = (m.name || '').replace(/'/g, "\\'");
+          const logo = m.logo_url ? '<img src="' + m.logo_url + '" alt="' + m.name + '">' : '<div style="height:50px;display:flex;align-items:center;justify-content:center;font-weight:bold;background:#f1f5f9;border-radius:6px">' + (m.name || '').substr(0, 3).toUpperCase() + '</div>';
+          return '<div class="merchant-tile" onclick="filterByMerchant(\'' + escapedName + '\')">' + logo + '<div class="name">' + m.name + '</div><div class="count">' + m.voucher_count + ' codes</div></div>';
+        }).join('');
 
         document.getElementById('topMerchants').innerHTML = html;
       } catch (err) {
@@ -800,23 +798,15 @@ const frontendHTML = `<!DOCTYPE html>
       const html = vouchers.map(v => {
         const expiry = v.expiry_date ? new Date(v.expiry_date) : null;
         const isExpiringSoon = expiry && (expiry - new Date()) < 7 * 24 * 60 * 60 * 1000;
-        const daysLeft = expiry ? Math.ceil((expiry - new Date()) / (1000 * 60 * 60 * 24)) : null;
+        const code = (v.code || '').replace(/'/g, "\\'");
+        const merchant = (v.merchant_name || '').replace(/'/g, "\\'");
+        const expiryClass = isExpiringSoon ? 'soon' : '';
+        const expiryText = v.expiry_date ? (isExpiringSoon ? '⏰ ' : '✓ ') + new Date(v.expiry_date).toLocaleDateString() : '∞ No expiry';
 
-        return \`
-          <div class="voucher-card">
-            <div class="voucher-badge">\${v.discount_value || 'Deal'}</div>
-            <div class="merchant">\${v.merchant_name}</div>
-            <div class="description">\${v.description}</div>
-            <div class="code" onclick="copyCode('\${v.code}', '\${v.merchant_name}')" title="Click to copy">\${v.code || 'No code needed'}</div>
-            <div class="copy-hint">Click code to copy</div>
-            <div class="voucher-meta">
-              <span class="expiry \${isExpiringSoon ? 'soon' : ''}">\${v.expiry_date ? (isExpiringSoon ? '⏰ ' : '✓ ') + new Date(v.expiry_date).toLocaleDateString() : '∞ No expiry'}</span>
-            </div>
-          </div>
-        \`;
+        return '<div class="voucher-card"><div class="voucher-badge">' + (v.discount_value || 'Deal') + '</div><div class="merchant">' + v.merchant_name + '</div><div class="description">' + v.description + '</div><div class="code" onclick="copyCode(\'' + code + '\', \'' + merchant + '\')" title="Click to copy">' + (v.code || 'No code needed') + '</div><div class="copy-hint">Click code to copy</div><div class="voucher-meta"><span class="expiry ' + expiryClass + '">' + expiryText + '</span></div></div>';
       }).join('');
 
-      document.getElementById('vouchersContainer').innerHTML = \`<div class="vouchers-grid">\${html}</div>\`;
+      document.getElementById('vouchersContainer').innerHTML = '<div class="vouchers-grid">' + html + '</div>';
     }
 
     function copyCode(code, merchant) {
