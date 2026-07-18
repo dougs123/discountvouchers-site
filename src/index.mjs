@@ -32,6 +32,10 @@ export default {
         return handleStats(req, env);
       }
 
+      if (url.pathname === '/api/live-prices') {
+        return handleLivePrices(req, env, url);
+      }
+
       // robots.txt
       if (url.pathname === '/robots.txt') {
         return new Response(`User-agent: *
@@ -192,6 +196,77 @@ async function handleStats(req, env) {
     vouchers: vouchers?.c || 0,
     categories: categories?.c || 0
   }), { headers: apiHeaders });
+}
+
+// Live multi-merchant prices via Redbrain's legacy Shopping API — free GraphQL,
+// no auth (shopping.redbrainapis.com). Offers filtered to IN_STOCK; tracking
+// links carry Redbrain's own affiliate tags until we wrap our own.
+const REDBRAIN_ENDPOINT = 'https://shopping.redbrainapis.com/graphql';
+const REDBRAIN_SEARCH_QUERY = `query searchOffers($input: SearchOfferRequest!) {
+  searchOffers(input: $input) {
+    offers {
+      title availability
+      merchant { name logo { URL } }
+      pricing { price { value currency } }
+      images { URL }
+      links { tracking deep }
+    }
+  }
+}`;
+
+function safeHttpUrl(u) {
+  return typeof u === 'string' && /^https?:\/\//i.test(u) ? u : null;
+}
+
+async function handleLivePrices(req, env, url) {
+  const q = (url.searchParams.get('q') || '').trim().slice(0, 120);
+  if (!q) return new Response(JSON.stringify({ offers: [] }), { headers: apiHeaders });
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const res = await fetch(REDBRAIN_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (compatible; DiscountVouchers/1.0)'
+      },
+      body: JSON.stringify({
+        operationName: 'searchOffers',
+        query: REDBRAIN_SEARCH_QUERY,
+        variables: { input: { q, locales: ['en_GB'] } }
+      }),
+      signal: controller.signal
+    });
+    if (!res.ok) throw new Error('redbrain ' + res.status);
+    const json = await res.json();
+    const raw = json?.data?.searchOffers?.offers || [];
+    const offers = [];
+    for (const o of raw) {
+      if (String(o?.availability || '').toUpperCase() !== 'IN_STOCK') continue;
+      const price = o?.pricing?.price;
+      const link = safeHttpUrl(o?.links?.tracking) || safeHttpUrl(o?.links?.deep);
+      if (!o?.title || !o?.merchant?.name || !price || typeof price.value !== 'number' || !link) continue;
+      offers.push({
+        title: String(o.title).slice(0, 140),
+        merchant: String(o.merchant.name).slice(0, 60),
+        logo: safeHttpUrl(o.merchant?.logo?.URL),
+        price: price.value,
+        currency: price.currency || 'GBP',
+        image: safeHttpUrl(o.images?.[0]?.URL),
+        url: link
+      });
+      if (offers.length >= 12) break;
+    }
+    return new Response(JSON.stringify({ offers }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=300' }
+    });
+  } catch (_) {
+    // Degrade quietly — vouchers still work without live prices.
+    return new Response(JSON.stringify({ offers: [] }), { headers: apiHeaders });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // NOTE: frontendHTML is a server-side template literal. The client-side
@@ -589,6 +664,83 @@ const frontendHTML = `<!DOCTYPE html>
       gap: 1.25rem;
     }
 
+    .offers-strip {
+      display: grid;
+      grid-auto-flow: column;
+      grid-auto-columns: 225px;
+      gap: 1rem;
+      overflow-x: auto;
+      padding-bottom: 0.6rem;
+      scroll-snap-type: x proximity;
+    }
+
+    .offer-card {
+      scroll-snap-align: start;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.9rem;
+      text-decoration: none;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+      box-shadow: var(--shadow);
+      transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+    }
+
+    .offer-card:hover {
+      transform: translateY(-3px);
+      box-shadow: var(--shadow-lift);
+      border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+    }
+
+    .offer-img {
+      width: 100%;
+      height: 110px;
+      object-fit: contain;
+      background: #fff;
+      border-radius: 8px;
+    }
+
+    .offer-price {
+      font-family: 'Outfit', sans-serif;
+      font-weight: 800;
+      font-size: 1.2rem;
+      color: var(--accent);
+    }
+
+    .offer-title {
+      font-size: 0.82rem;
+      line-height: 1.35;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .offer-merchant {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--muted);
+      margin-top: auto;
+    }
+
+    .offer-logo {
+      height: 16px;
+      max-width: 70px;
+      object-fit: contain;
+    }
+
+    .offers-note {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 0.5rem;
+    }
+
     .voucher-card {
       position: relative;
       overflow: hidden;
@@ -899,6 +1051,15 @@ const frontendHTML = `<!DOCTYPE html>
       <div class="merchants-grid" id="topMerchants"></div>
     </section>
 
+    <section id="livePrices" style="display:none">
+      <div class="section-head">
+        <h2 id="livePricesTitle">Live prices</h2>
+        <span class="result-count" id="liveCount"></span>
+      </div>
+      <div class="offers-strip" id="offersStrip"></div>
+      <p class="offers-note">Live in-stock prices from UK retailers, powered by Redbrain. Links open the retailer's site.</p>
+    </section>
+
     <section id="deals">
       <div class="section-head">
         <h2 id="dealsTitle">Latest deals</h2>
@@ -1043,6 +1204,7 @@ const frontendHTML = `<!DOCTYPE html>
       state.offset = 0;
       document.querySelectorAll('.pill').forEach(function (p, i) { p.classList.toggle('active', i === 0); });
       loadVouchers(false);
+      loadLivePrices(name);
       document.getElementById('deals').scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
@@ -1150,6 +1312,61 @@ const frontendHTML = `<!DOCTYPE html>
       });
     }
 
+    /* ---------- live prices (Redbrain) ---------- */
+    function priceLabel(o) {
+      var sym = o.currency === 'GBP' ? '£' : (o.currency === 'USD' ? '$' : (o.currency === 'EUR' ? '€' : o.currency + ' '));
+      return sym + (o.price || 0).toFixed(2);
+    }
+
+    async function loadLivePrices(q) {
+      var section = document.getElementById('livePrices');
+      var strip = document.getElementById('offersStrip');
+      if (!q) { section.style.display = 'none'; strip.innerHTML = ''; return; }
+      try {
+        var res = await fetch('/api/live-prices?q=' + encodeURIComponent(q));
+        var data = await res.json();
+        var offers = data.offers || [];
+        if (!offers.length) { section.style.display = 'none'; strip.innerHTML = ''; return; }
+        strip.innerHTML = '';
+        document.getElementById('livePricesTitle').textContent = 'Live prices for "' + q + '"';
+        document.getElementById('liveCount').textContent = offers.length + ' offers';
+        offers.forEach(function (o) {
+          var a = document.createElement('a');
+          a.className = 'offer-card';
+          a.href = o.url;
+          a.target = '_blank';
+          a.rel = 'nofollow sponsored noopener';
+          a.addEventListener('click', function () { track('live_offer_click', { merchant: o.merchant }); });
+          if (o.image) {
+            var img = document.createElement('img');
+            img.className = 'offer-img';
+            img.src = o.image;
+            img.alt = o.title;
+            img.loading = 'lazy';
+            img.addEventListener('error', function () { img.style.display = 'none'; });
+            a.appendChild(img);
+          }
+          a.appendChild(el('div', 'offer-price', priceLabel(o)));
+          a.appendChild(el('div', 'offer-title', o.title));
+          var m = el('div', 'offer-merchant');
+          if (o.logo) {
+            var lg = document.createElement('img');
+            lg.className = 'offer-logo';
+            lg.src = o.logo;
+            lg.alt = '';
+            lg.addEventListener('error', function () { lg.style.display = 'none'; });
+            m.appendChild(lg);
+          }
+          m.appendChild(el('span', null, o.merchant));
+          a.appendChild(m);
+          strip.appendChild(a);
+        });
+        section.style.display = 'block';
+      } catch (err) {
+        section.style.display = 'none';
+      }
+    }
+
     /* ---------- search wiring ---------- */
     var debounceTimer = null;
 
@@ -1158,6 +1375,7 @@ const frontendHTML = `<!DOCTYPE html>
       state.offset = 0;
       track('search', { search_term: state.q, category: state.category });
       loadVouchers(false);
+      loadLivePrices(state.q);
     }
 
     document.getElementById('search-input').addEventListener('input', function () {
